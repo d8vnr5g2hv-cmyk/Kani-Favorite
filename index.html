@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Kani Favorite デモ4</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --teal:#20999C; --tabH:64px; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; }
+  html,body { height:100%; background:#000; font-family:'Noto Sans JP',sans-serif; overflow:hidden; color:#fff; }
+
+  /* ===== メモロビ ===== */
+  #lobby { position:fixed; inset:0; }
+  .slides { display:flex; height:100%; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; }
+  .slides::-webkit-scrollbar { display:none; }
+  .slide { flex:0 0 100%; height:100%; scroll-snap-align:center; position:relative; overflow:hidden; background:#111; }
+  .slide video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+        color:rgba(255,255,255,.7); font-size:14px; text-align:center; line-height:1.8;
+        background:linear-gradient(160deg,#1b3d3e,#0d1b1c); }
+
+  /* 横持ち：ロビーを90度回転して原寸表示 */
+  body.land #lobby { width:100vh; height:100vw; inset:auto; top:0; left:100vw; transform-origin:0 0; transform:rotate(90deg); }
+  body.land .slides { overflow-x:hidden; }
+  @media (orientation:landscape) { body.land #lobby { width:100vw; height:100vh; left:0; transform:none; } }
+
+  /* 重ねるUI（数秒で消える） */
+  .ui { transition:opacity .5s; }
+  body.idle .ui { opacity:0; pointer-events:none; }
+
+  .banner { position:absolute; top:0; left:0; right:0; z-index:5;
+            padding:calc(env(safe-area-inset-top) + 10px) 16px 24px;
+            background:linear-gradient(rgba(0,0,0,.45),transparent);
+            display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+  body.land .banner { padding-top:14px; padding-left:calc(env(safe-area-inset-top) + 16px); }
+  .banner .title { font-size:11px; letter-spacing:.12em; opacity:.85; }
+  .banner .name { font-size:20px; font-weight:700; margin-top:2px; text-shadow:0 1px 6px rgba(0,0,0,.3); }
+  .banner .greet { font-size:12px; opacity:.85; margin-top:2px; }
+  .icons { display:flex; gap:10px; pointer-events:auto; }
+  .icons button { width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,.35);
+                  background:rgba(0,0,0,.25); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+                  color:#fff; display:flex; align-items:center; justify-content:center; }
+  .icons button:active { transform:scale(.92); }
+  .icons svg { width:18px; height:18px; fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  .dots { position:fixed; left:0; right:0; bottom:calc(var(--tabH) + env(safe-area-inset-bottom) + 16px);
+          display:flex; justify-content:center; gap:8px; z-index:5; pointer-events:none; }
+  .dots span { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.45); transition:.2s; }
+  .dots span.on { background:#fff; width:18px; border-radius:4px; }
+  body.land .dots, body.land .tabs { display:none; }
+
+  /* 他タブ */
+  .page { position:fixed; inset:0; background:#fff; color:#333; z-index:8; display:none;
+          padding:calc(env(safe-area-inset-top) + 20px) 16px calc(var(--tabH) + 40px); overflow-y:auto; }
+  .page.show { display:block; }
+  .page h2 { color:var(--teal); font-size:20px; margin-bottom:12px; }
+  .page p { color:#555; font-size:14px; line-height:1.8; }
+
+  .tabs { position:fixed; left:0; right:0; bottom:0; z-index:9; display:flex;
+          height:calc(var(--tabH) + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom);
+          background:rgba(0,0,0,.3); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+          border-top:1px solid rgba(255,255,255,.15); }
+  .tabs.light { background:rgba(255,255,255,.94); border-top-color:#e5e5e5; }
+  .tabs button { flex:1; border:none; background:none; font-family:inherit; font-size:11px; color:rgba(255,255,255,.6); }
+  .tabs.light button { color:#999; }
+  .tabs button.on { color:#fff; font-weight:700; }
+  .tabs.light button.on { color:var(--teal); }
+  .tabs .ic { display:block; font-size:20px; margin-bottom:2px; }
+
+  /* 起動画面（本番ではFace IDの位置） */
+  #start { position:fixed; inset:0; z-index:20; background:#0b1a1b; display:flex; flex-direction:column;
+           align-items:center; justify-content:center; gap:18px; transition:opacity .6s; }
+  #start.hide { opacity:0; pointer-events:none; }
+  #start .logo { font-size:13px; letter-spacing:.3em; color:var(--teal); }
+  #start .big { font-size:26px; font-weight:700; }
+  #start .tap { font-size:13px; opacity:.7; animation:blink 1.6s ease-in-out infinite; }
+  #start .load { font-size:11px; opacity:.5; }
+  @keyframes blink { 50% { opacity:.25; } }
+
+  .toast { position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:30;
+           background:rgba(0,0,0,.7); color:#fff; padding:10px 18px; border-radius:20px; font-size:13px;
+           opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<div id="start">
+  <div class="logo">KANI FAVORITE</div>
+  <div class="big">タップしてはじめる</div>
+  <div class="tap">（本番ではここがFace IDになります）</div>
+  <div class="load" id="loadState">読み込み中…</div>
+</div>
+
+<div id="lobby">
+  <div class="slides" id="slides"></div>
+  <div class="banner ui" id="banner">
+    <div>
+      <div class="title">KANI FAVORITE</div>
+      <div class="name" id="charName"></div>
+      <div class="greet" id="greet"></div>
+    </div>
+    <div class="icons">
+      <button id="bgmBtn" aria-label="BGM"></button>
+      <button id="landBtn" aria-label="横持ち"></button>
+    </div>
+  </div>
+</div>
+
+<div class="dots ui" id="dots"></div>
+
+<div class="page" id="page-todo"><h2>Todo</h2><p>別途設計（デモでは中身なし）</p></div>
+<div class="page" id="page-love"><h2>Love</h2><p>別途設計（デモでは中身なし）</p></div>
+<div class="page" id="page-accounts"><h2>Accounts</h2><p>別途設計（デモでは中身なし）</p></div>
+<div class="page" id="page-profile"><h2>Profile</h2><p>別途設計（デモでは中身なし）</p></div>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="todo"><span class="ic">✓</span>Todo</button>
+  <button data-tab="love"><span class="ic">♡</span>Love</button>
+  <button data-tab="favorite" class="on"><span class="ic">★</span>Favorite</button>
+  <button data-tab="accounts"><span class="ic">🔑</span>Accounts</button>
+  <button data-tab="profile"><span class="ic">👤</span>Profile</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 素材 =====
+const range = (n, f) => Array.from({ length:n }, (_, i) => f(i + 1));
+const chars = [
+  { name:'キャラ1',
+    tall:'lobby_tall_h264.mp4', tallPoster:'lobby_tall_poster.jpg',
+    wide:'lobby_h264.mp4', widePoster:'lobby_poster.jpg',
+    voices: range(12, i => `c1_v${String(i).padStart(2,'0')}.mp3`) },
+  { name:'キャラ2', voices:[] }, { name:'キャラ3', voices:[] }, { name:'キャラ4', voices:[] },
+];
+const BGM = { src:'bgm.mp3', loopStart:0.2, loopEnd:0.2 + 117.25 }; // 前後0.2秒は継ぎ目用の余白
+
+const $ = id => document.getElementById(id);
+const slidesEl = $('slides'), dotsEl = $('dots');
+let current = 0, tab = 'favorite';
+
+// ===== 音（Web Audio：BGMを継ぎ目なくループ＋ボイス中はBGMを下げる） =====
+const AC = window.AudioContext || window.webkitAudioContext;
+const ctx = new AC();
+const bgmGain = ctx.createGain(); bgmGain.connect(ctx.destination);
+const voiceGain = ctx.createGain(); voiceGain.connect(ctx.destination);
+const BGM_VOL = 0.55, DUCK_VOL = 0.18;
+const buffers = {};
+let bgmNode = null, bgmOn = true, voiceNode = null;
+const recent = [];
+
+async function loadBuf(url) {
+  if (buffers[url]) return buffers[url];
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('not found: ' + url);
+  const ab = await res.arrayBuffer();
+  const buf = await new Promise((ok, ng) => ctx.decodeAudioData(ab, ok, ng));
+  return (buffers[url] = buf);
+}
+
+function startBgm() {
+  if (!bgmOn || bgmNode || tab !== 'favorite' || !buffers[BGM.src]) return;
+  const n = ctx.createBufferSource();
+  n.buffer = buffers[BGM.src]; n.loop = true;
+  n.loopStart = BGM.loopStart; n.loopEnd = BGM.loopEnd;
+  n.connect(bgmGain);
+  bgmGain.gain.cancelScheduledValues(ctx.currentTime);
+  bgmGain.gain.setValueAtTime(0, ctx.currentTime);
+  bgmGain.gain.linearRampToValueAtTime(voiceNode ? DUCK_VOL : BGM_VOL, ctx.currentTime + 1.2);
+  n.start(0, BGM.loopStart);
+  bgmNode = n;
+}
+function stopBgm() {
+  if (!bgmNode) return;
+  const n = bgmNode; bgmNode = null;
+  bgmGain.gain.cancelScheduledValues(ctx.currentTime);
+  bgmGain.gain.setValueAtTime(bgmGain.gain.value, ctx.currentTime);
+  bgmGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+  n.stop(ctx.currentTime + 0.45);
+}
+function duck(on) {
+  const t = ctx.currentTime;
+  bgmGain.gain.cancelScheduledValues(t);
+  bgmGain.gain.setValueAtTime(bgmGain.gain.value, t);
+  bgmGain.gain.linearRampToValueAtTime(on ? DUCK_VOL : BGM_VOL, t + (on ? 0.25 : 0.8));
+}
+
+async function playVoice() {
+  const list = chars[current].voices;
+  if (!list.length) { toast(`${chars[current].name}：ボイス未登録`); return; }
+  // 直近に流したものは避ける
+  const pool = list.filter(v => !recent.includes(v));
+  const pick = (pool.length ? pool : list)[Math.floor(Math.random() * (pool.length || list.length))];
+  recent.push(pick); if (recent.length > Math.min(5, list.length - 1)) recent.shift();
+  try {
+    const buf = await loadBuf(pick);
+    if (voiceNode) { try { voiceNode.stop(); } catch(e){} }
+    const n = ctx.createBufferSource(); n.buffer = buf; n.connect(voiceGain);
+    voiceNode = n; duck(true);
+    n.onended = () => { if (voiceNode === n) { voiceNode = null; duck(false); } };
+    n.start();
+  } catch(e) { toast('ボイスを読み込めませんでした'); }
+}
+
+// ===== スライド =====
+chars.forEach((c, i) => {
+  const s = document.createElement('div');
+  s.className = 'slide';
+  slidesEl.appendChild(s);
+  dotsEl.appendChild(document.createElement('span'));
+  loadChar(i);
+});
+function loadChar(i) {
+  const c = chars[i], s = slidesEl.children[i];
+  const land = document.body.classList.contains('land');
+  const src = land ? (c.wide || c.tall) : (c.tall || c.wide);
+  const poster = land ? (c.widePoster || c.tallPoster) : (c.tallPoster || c.widePoster);
+  if (!src) { s.innerHTML = `<div class="ph">${c.name}<br>動画未登録</div>`; return; }
+  s.innerHTML = '';
+  const v = document.createElement('video');
+  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto';
+  v.setAttribute('playsinline',''); v.setAttribute('muted','');
+  if (poster) v.poster = poster;
+  v.src = src;
+  s.appendChild(v);
+  if (i === current) v.play().catch(()=>{});
+}
+function updateUI() {
+  $('charName').textContent = chars[current].name;
+  [...dotsEl.children].forEach((d, i) => d.classList.toggle('on', i === current));
+  [...slidesEl.children].forEach((s, i) => {
+    const v = s.querySelector('video');
+    if (v) i === current ? v.play().catch(()=>{}) : v.pause();
+  });
+}
+slidesEl.addEventListener('scroll', () => {
+  const i = Math.round(slidesEl.scrollLeft / slidesEl.clientWidth);
+  if (i !== current) { current = i; updateUI(); }
+});
+
+// タップ判定（スワイプと区別）
+let tx = 0, ty = 0, tt = 0;
+slidesEl.addEventListener('pointerdown', e => { tx = e.clientX; ty = e.clientY; tt = Date.now(); });
+slidesEl.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - tx, e.clientY - ty) < 10 && Date.now() - tt < 500) {
+    wake();
+    playVoice();
+  }
+});
+
+// ===== 自動で隠れるUI =====
+let idleTimer;
+function wake() {
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (tab === 'favorite') document.body.classList.add('idle'); }, 4000);
+}
+['pointerdown','scroll'].forEach(ev => document.addEventListener(ev, wake, { passive:true, capture:true }));
+
+// ===== アイコン =====
+const ICON = {
+  on:'<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  off:'<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M3 3l18 18"/></svg>',
+  land:'<svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M2 9a10 10 0 0 0 3 8M22 15a10 10 0 0 0-3-8"/></svg>',
+};
+function drawIcons() {
+  $('bgmBtn').innerHTML = bgmOn ? ICON.on : ICON.off;
+  $('landBtn').innerHTML = ICON.land;
+}
+$('bgmBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  bgmOn = !bgmOn; drawIcons();
+  bgmOn ? startBgm() : stopBgm();
+  toast(bgmOn ? 'BGM オン' : 'BGM オフ');
+});
+$('landBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  document.body.classList.toggle('land');
+  chars.forEach((c, i) => loadChar(i));
+  requestAnimationFrame(() => { slidesEl.scrollLeft = slidesEl.clientWidth * current; });
+});
+['pointerup','pointerdown'].forEach(ev => $('banner').addEventListener(ev, e => { if (e.target.closest('button')) e.stopPropagation(); }));
+
+// ===== 時間帯 =====
+function greet() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 11) return 'おはよう';
+  if (h >= 11 && h < 17) return 'こんにちは';
+  if (h >= 17 && h < 23) return 'お疲れさま';
+  return 'もう遅い時間';
+}
+$('greet').textContent = greet();
+
+// ===== タブ =====
+const tabs = $('tabs');
+tabs.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  [...tabs.children].forEach(x => x.classList.toggle('on', x === b));
+  tab = b.dataset.tab;
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('show', p.id === 'page-' + tab));
+  tabs.classList.toggle('light', tab !== 'favorite');
+  if (tab === 'favorite') { startBgm(); updateUI(); }
+  else { stopBgm(); slidesEl.querySelectorAll('video').forEach(v => v.pause()); }
+  wake();
+});
+
+// アプリを閉じたら止める・戻ったら再開
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { stopBgm(); ctx.suspend(); }
+  else if ($('start').classList.contains('hide')) { ctx.resume().then(() => { startBgm(); updateUI(); }); }
+});
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 1400);
+}
+
+// ===== 起動 =====
+// マナーモード中は鳴らない（iPhoneの仕様）。マナーモードでも鳴らしたい場合は次の行の // を外す
+// try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e) {}
+
+const preload = loadBuf(BGM.src).then(() => { $('loadState').textContent = '準備OK'; })
+  .catch(() => { $('loadState').textContent = 'BGMが見つかりません（bgm.mp3）'; });
+chars[0].voices.slice(0, 3).forEach(v => loadBuf(v).catch(()=>{}));
+
+$('start').addEventListener('click', async () => {
+  await ctx.resume();
+  $('start').classList.add('hide');
+  await preload;
+  startBgm();
+  updateUI();
+  setTimeout(playVoice, 600); // 起動時のひとこと
+  wake();
+}, { once:true });
+
+drawIcons();
+updateUI();
+</script>
+</body>
+</html>
